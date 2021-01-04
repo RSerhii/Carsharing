@@ -1,0 +1,42 @@
+[package]
+name = "cw-carsharing"
+version = "0.1.0"
+authors = ["RSerhii"]
+edition = "2021"
+license = "Apache-2.0"
+description = "Carsharing CosmWasm contract"
+repository = "https://github.com/RSerhii/Carsharing"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = 3
+debug = false
+rpath = false
+lto = true
+debug-assertions = false
+codegen-units = 1
+panic = 'abort'
+incremental = false
+overflow-checks = true
+
+[features]
+default = ["cranelift"]
+# for quicker tests, cargo test --lib
+# for more explicit tests, cargo test --features=backtraces
+backtraces = ["cosmwasm-std/backtraces", "cosmwasm-vm/backtraces"]
+cranelift = ["cosmwasm-vm/default-cranelift"]
+singlepass = ["cosmwasm-vm/default-singlepass"]
+
+[dependencies]
+cosmwasm-std = "0.12.0"
+cosmwasm-storage = "0.12.0"
+schemars = "0.7"
+serde = { version = "1.0.103", default-features = false, features = ["derive"] }
+hex = "0.4"
+thiserror = { version = "1.0.20" }
+
+[dev-dependencies]
+cosmwasm-vm = { version = "0.12.0", default-features = false }
+cosmwasm-schema = "0.12.0"
