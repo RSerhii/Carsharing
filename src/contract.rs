@@ -1,13 +1,13 @@
 use crate::error::ContractError;
 use crate::msg::{
-    HandleMsg, InitMsg, QueryMsg, ClientBalanceResponse, RentResponse
+    HandleMsg, InitMsg, QueryMsg, ClientBalanceResponse, RentResponse, RentCarResponse
 };
 use crate::state::{
     Config, TimePeriod, Car, Client, Rent, config, config_read, cars, cars_read, clients, clients_read, rents, rents_read
 };
 use cosmwasm_std::{
     attr, coin, to_binary, BankMsg, Binary, CanonicalAddr, Coin, CosmosMsg, Deps, DepsMut, Env,
-    HandleResponse, HumanAddr, InitResponse, MessageInfo, StdError, StdResult, Storage, Uint128,
+    HandleResponse, HumanAddr, InitResponse, MessageInfo, StdError, StdResult, Storage,
 };
 
 const RENT_PERIOD: u64 = 60;
@@ -18,14 +18,14 @@ pub fn init(
     info: MessageInfo,
     msg: InitMsg,
 ) -> Result<InitResponse, ContractError> {
-    let config = Config {
-        title: msg.title,
-        kyc_verificator: deps.api.canonical_address(&msg.kyc_verificator),
-        manager: deps.api.canonical_address(&msg.manager),
+    let config_state = Config {
+        denom: msg.denom,
+        kyc_verificator: deps.api.canonical_address(&msg.kyc_verificator)?,
+        manager: deps.api.canonical_address(&msg.manager)?,
         rent_count: 0
     };
 
-    config(deps.storage).save(&config)?;
+    config(deps.storage).save(&config_state)?;
 
     Ok(InitResponse::default())
 }
@@ -46,8 +46,8 @@ pub fn handle(
         HandleMsg::RegisterClient {
             name
         } => register_client(deps, env, info, name),
-        VerifyClient {
-            address: HumanAddr,
+        HandleMsg::VerifyClient {
+            address,
         } => verify_client(deps, env, info, address),
         HandleMsg::RentCar {
             car_id,
@@ -71,8 +71,8 @@ pub fn register_car(
     info: MessageInfo,
     id: HumanAddr,
     name: String,
-    rent_price: Uint128,
-    deposit_price: Uint128
+    rent_price: u128,
+    deposit_price: u128
 ) -> Result<HandleResponse, ContractError> {
     let sender_address_raw = deps.api.canonical_address(&info.sender)?;
     let config_state = config(deps.storage).load()?;
@@ -82,18 +82,19 @@ pub fn register_car(
     }
     
     let car_address_raw = deps.api.canonical_address(&id)?;
-    let key = &car_address_raw.as_slice();
+    let key = car_address_raw.as_slice();
     
     let stored_car = cars_read(deps.storage).may_load(key)?;
     if stored_car.is_some() {
-        return Err(StdError::generic_err("Car already registered"));
+        return Err(ContractError::CarExist {});
     }
     
     let car = Car {
-        id: car_address_raw,
+        id: deps.api.canonical_address(&id)?,
         name: name,
         rent_price: rent_price, 
         deposit_price: deposit_price,
+        usage_periods: vec![],
         balance: 0
     };
 
@@ -113,14 +114,21 @@ pub fn register_client(
     
     let stored_client = clients_read(deps.storage).may_load(key)?;
     if stored_client.is_some() {
-        return Err(StdError::generic_err("Client already registered"));
+        return Err(ContractError::ClientExist {});
     }
     
+    let config_state = config(deps.storage).load()?;
+    let sent_funds = info
+        .sent_funds
+        .iter()
+        .find(|coin| coin.denom.eq(&config_state.denom))
+        .unwrap();
+
     let client = Client {
-        id: sender_address_raw,
+        id: deps.api.canonical_address(&info.sender)?,
         name: name,
-        verified: False, 
-        balance: &info.sent_funds,
+        verified: false, 
+        balance: sent_funds.amount.u128(),
         locked_balance: 0
     };
 
@@ -148,7 +156,7 @@ pub fn verify_client(
         
     clients(deps.storage).update(key, |record| {
         if let Some(mut record) = record {
-            record.verified = True;
+            record.verified = true;
             Ok(record)
         } else {
             return Err(ContractError::ClientNotExist {});
@@ -167,35 +175,35 @@ pub fn rent_car(
     end: u64
 ) -> Result<HandleResponse, ContractError> {
     let car_address_raw = deps.api.canonical_address(&car_id)?;
-    let car = match rents_read(deps.storage).may_load(&car_address_raw.as_slice())? {
+    let car = match cars_read(deps.storage).may_load(&car_address_raw.as_slice())? {
         Some(car) => Some(car),
-        None => return Err(ContractError::CarNotExist {}),
+        None => return Err(ContractError::CarNotExist {})
     }
     .unwrap();
 
     let sender_address_raw = deps.api.canonical_address(&info.sender)?;
     let client_key = &sender_address_raw.as_slice();
-    let mut client = match rents_read(deps.storage).may_load(&client_key.as_slice())? {
+    let mut client = match clients_read(deps.storage).may_load(client_key)? {
         Some(client) => Some(client),
-        None => return Err(ContractError::ClientNotExist {}),
+        None => return Err(ContractError::ClientNotExist {})
     }
     .unwrap();
 
     if !client.verified {
-        return Err(StdError::generic_err("Client is not verified"));
+        return Err(ContractError::ClientNotVerified {});
     }    
 
 
-    let rent_cost = car.deposit_price + car.rent_price * ((end - start) / RENT_PERIOD);
+    let rent_cost = car.deposit_price + car.rent_price * u128::from((end - start) / RENT_PERIOD);
     if client.balance < rent_cost {
-        return Err(StdError::generic_err("Insufficient funds"));
+        return Err(ContractError::InsufficientFunds {});
     }
 
     client.balance -= rent_cost;
     client.locked_balance += rent_cost;
 
     let rent = Rent {
-        client_id: sender_address_raw,
+        client_id: deps.api.canonical_address(&info.sender)?,
         car_id: car_address_raw,
         balance: rent_cost,
         usage: TimePeriod{start, end},
@@ -205,7 +213,7 @@ pub fn rent_car(
     let mut config_state = config(deps.storage).load()?;
     let rent_id = config_state.rent_count + 1;
     config_state.rent_count = rent_id;
-    let rent_key = rent_id.to_be_bytes();
+    let rent_key = &rent_id.to_be_bytes();
 
     config(deps.storage).save(&config_state)?;
     clients(deps.storage).save(client_key, &client)?;
@@ -230,9 +238,10 @@ pub fn start_rent(
     date: u64
 ) -> Result<HandleResponse, ContractError> {
     let key = &rent_id.to_be_bytes();
+    let sender = deps.api.canonical_address(&info.sender)?;
     rents(deps.storage).update(key, |record| {
         if let Some(mut record) = record {
-            if api.canonical_address(&info.sender)? != record.car_id {
+            if sender != record.car_id {
                 return Err(ContractError::Unauthorized {});
             }
             record.actual_start = date;
@@ -260,11 +269,11 @@ pub fn end_rent(
     .unwrap();
 
     if rent.balance == 0 {
-        return Err(StdError::generic_err("Rent is closed"));
+        return Err(ContractError::RentClosed {});
     }
 
     let car_key = &rent.car_id.as_slice();
-    let mut car = match rents_read(deps.storage).may_load(car_key)? {
+    let mut car = match cars_read(deps.storage).may_load(car_key)? {
         Some(car) => Some(car),
         None => return Err(ContractError::CarNotExist {}),
     }
@@ -272,12 +281,12 @@ pub fn end_rent(
 
     let mut payment = rent.balance - car.deposit_price;
     if date > rent.usage.end {
-        payment += ((date - rent.usage.end) / RENT_PERIOD) * car.rent_price;
+        payment += u128::from((date - rent.usage.end) / RENT_PERIOD) * car.rent_price;
     }
 
     car.balance += payment;
 
-    let client_key = &rent.client_id.to_be_bytes();
+    let client_key = &rent.client_id.as_slice();
     clients(deps.storage).update(client_key, |record| {
         if let Some(mut record) = record {
             record.locked_balance -= rent.balance;
@@ -305,12 +314,12 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 
 
 fn client_balance(deps: Deps, address: HumanAddr) -> StdResult<Binary> {
-    let sender_address_raw = deps.api.canonical_address(&info.sender)?;
+    let sender_address_raw = deps.api.canonical_address(&address)?;
     let key = &sender_address_raw.as_slice();
     
     let client = match clients_read(deps.storage).may_load(key)? {
         Some(client) => Some(client),
-        None => return Err(ContractError::ClientNotExist {}),
+        None => return Err(StdError::generic_err("Client does not exist"))
     }
     .unwrap();
 
@@ -327,13 +336,13 @@ fn rent_by_id(deps: Deps, rent_id: u64) -> StdResult<Binary> {
 
     let rent = match rents_read(deps.storage).may_load(key)? {
         Some(rent) => Some(rent),
-        None => return Err(ContractError::RentNotExist {}),
+        None => return Err(StdError::generic_err("Rent does not exist"))
     }
     .unwrap();
     
     let resp = RentResponse {
-        client: rent.client_id,
-        car: rent.car_id,
+        client: deps.api.human_address(&rent.client_id)?,
+        car: deps.api.human_address(&rent.car_id)?,
         balance: rent.balance,
         usage_start: rent.usage.start,
         usage_end: rent.usage.end,

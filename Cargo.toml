@@ -2,7 +2,7 @@
 name = "cw-carsharing"
 version = "0.1.0"
 authors = ["RSerhii"]
-edition = "2021"
+edition = "2018"
 license = "Apache-2.0"
 description = "Carsharing CosmWasm contract"
 repository = "https://github.com/RSerhii/Carsharing"

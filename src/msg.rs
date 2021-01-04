@@ -1,11 +1,10 @@
-use crate::state::PollStatus;
-use cosmwasm_std::{HumanAddr, Uint128};
+use cosmwasm_std::{HumanAddr};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct InitMsg {
-    pub title: String,
+    pub denom: String,
     pub kyc_verificator: HumanAddr,
     pub manager: HumanAddr
 }
@@ -16,15 +15,15 @@ pub enum HandleMsg {
     RegisterCar {
         id: HumanAddr,
         name: String,
-        rent_price: Uint128,
-        deposit_price: Uint128
+        rent_price: u128,
+        deposit_price: u128
     },
     RegisterClient {
         name: String
     },
     VerifyClient {
         address: HumanAddr,
-    }
+    },
     RentCar {
         car_id: HumanAddr,
         start: u64,
@@ -50,17 +49,17 @@ pub enum QueryMsg {
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct ClientBalanceResponse {
-    pub balance: Uint128,
-    pub locked_balance: Uint128
+    pub balance: u128,
+    pub locked_balance: u128
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct RentResponse {
-    pub client: CanonicalAddr,
-    pub car: CanonicalAddr,
-    pub balance: Uint128,
-    pub usage_start: u64
-    pub usage_end: u64
+    pub client: HumanAddr,
+    pub car: HumanAddr,
+    pub balance: u128,
+    pub usage_start: u64,
+    pub usage_end: u64,
     pub actual_start: u64
 }
 

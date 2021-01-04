@@ -1,4 +1,4 @@
-use cosmwasm_std::{CanonicalAddr, Storage, Uint128};
+use cosmwasm_std::{CanonicalAddr, Storage};
 use cosmwasm_storage::{
     bucket, bucket_read, singleton, singleton_read, Bucket, ReadonlyBucket, ReadonlySingleton,
     Singleton,
@@ -13,7 +13,7 @@ static RENTS_KEY: &[u8] = b"rents";
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Config {
-    pub title: String,
+    pub denom: String,
     pub kyc_verificator: CanonicalAddr,
     pub manager: CanonicalAddr,
     pub rent_count: u64,
@@ -29,26 +29,26 @@ pub struct TimePeriod {
 pub struct Car {
     pub id: CanonicalAddr,
     pub name: String,
-    pub rent_price: Uint128,
-    pub deposit_price: Uint128,
-    pub usage_periods: Vec<TimePeriod>
-    pub balance: Uint128,
+    pub rent_price: u128,
+    pub deposit_price: u128,
+    pub usage_periods: Vec<TimePeriod>,
+    pub balance: u128,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Client {
     pub id: CanonicalAddr,
     pub name: String,
-    pub verified: Boolean, 
-    pub balance: Uint128,
-    pub locked_balance: Uint128
+    pub verified: bool, 
+    pub balance: u128,
+    pub locked_balance: u128
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct Rent {
     pub client_id: CanonicalAddr,
     pub car_id: CanonicalAddr,
-    pub balance: Uint128,
+    pub balance: u128,
     pub usage: TimePeriod,
     pub actual_start: u64
 }
